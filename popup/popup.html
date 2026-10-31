@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KDP Samples Exporter</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 320px;
+      background: linear-gradient(150deg, #0b0b1e 0%, #141428 60%, #0c1f40 100%);
+      color: #e2e8f0;
+      overflow-x: hidden;
+      padding-bottom: 8px;
+    }
+
+    /* Header */
+    .header {
+      padding: 14px 18px 12px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.1));
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 11px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 14px rgba(99,102,241,0.45);
+    }
+    .logo svg { width: 21px; height: 21px; }
+    .header-text h1 { font-size: 13.5px; font-weight: 700; color: #f8fafc; }
+    .header-text p  { font-size: 10.5px; color: #94a3b8; margin-top: 2px; }
+
+    /* Status Bar */
+    .status-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 18px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .status-left { display: flex; align-items: center; gap: 8px; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #64748b; flex-shrink: 0; transition: background .3s;
+    }
+    .dot.ok    { background: #10b981; box-shadow: 0 0 10px rgba(16,185,129,0.7); animation: pulse 2s infinite; }
+    .dot.check { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.7); animation: pulse 1s infinite; }
+    .dot.error { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.7); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    #slabel { font-size: 11.5px; font-weight: 500; color: #cbd5e1; }
+    .status-badge {
+      font-size: 10px; font-weight: 600; color: #a5b4fc;
+      background: rgba(99,102,241,0.15);
+      border: 1px solid rgba(99,102,241,0.3);
+      padding: 2px 8px; border-radius: 12px;
+    }
+
+    /* Main Actions Box */
+    .action-box {
+      margin: 14px 16px 0;
+      padding: 14px;
+      background: rgba(30, 41, 59, 0.65);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .action-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #94a3b8;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Range selector */
+    .range-selector {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding: 6px 10px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.05);
+      font-size: 11.5px;
+      color: #cbd5e1;
+    }
+    .range-inputs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .range-inputs input {
+      width: 44px;
+      height: 25px;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      color: #f8fafc;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      outline: none;
+    }
+    .range-inputs input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99,102,241,0.3);
+    }
+
+    /* Primary Download Buttons */
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-bottom: 9px;
+    }
+    .action-btn {
+      appearance: none;
+      border: none;
+      padding: 10px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all .2s ease;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .action-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+    .action-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    .action-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      filter: grayscale(0.5);
+    }
+
+    .btn-pdf {
+      background: linear-gradient(135deg, #ffd814, #f59e0b);
+      color: #0f172a;
+      box-shadow: 0 4px 14px rgba(245,158,11,0.3);
+    }
+    .btn-zip {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+    }
+    .btn-scroll {
+      width: 100%;
+      background: #334155;
+      color: #f1f5f9;
+      padding: 8px 10px;
+      font-size: 11.5px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .btn-scroll:hover:not(:disabled) {
+      background: #475569;
+    }
+    .btn-open {
+      width: 100%;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: #ffffff;
+      padding: 9px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      box-shadow: 0 4px 14px rgba(245,158,11,0.35);
+      border: 1px solid rgba(255,255,255,0.15);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .btn-open:hover {
+      filter: brightness(1.1);
+    }
+    .btn-covers {
+      width: 100%;
+      background: linear-gradient(135deg, #0d9488, #14b8a6);
+      color: #ffffff;
+      padding: 8px 10px;
+      font-size: 11.5px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 3px 12px rgba(13,148,136,0.3);
+      margin-top: 6px;
+    }
+    .btn-covers:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+    .btn-toggle {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      color: #94a3b8;
+      padding: 7px 10px;
+      font-size: 11px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      margin-top: 6px;
+    }
+    .btn-toggle:hover:not(:disabled) {
+      background: rgba(255,255,255,0.12);
+      color: #f1f5f9;
+    }
+
+    /* Progress bar */
+    .progress-box {
+      margin-top: 10px;
+      display: none;
+    }
+    .progress-bar-bg {
+      height: 6px;
+      background: rgba(15,23,42,0.8);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 5px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6366f1, #10b981);
+      transition: width .2s ease;
+    }
+    .progress-text {
+      font-size: 10.5px;
+      color: #94a3b8;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    /* Interactive Preview Demo */
+    .preview-demo {
+      margin: 12px 16px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: #131322;
+    }
+    .demo-toolbar {
+      background: #1a1a2e;
+      padding: 7px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .demo-nav {
+      font-size: 9.5px; color: #64748b;
+      display: flex; align-items: center; gap: 3px;
+    }
+    .demo-nav svg { width: 9px; height: 9px; opacity: .7; }
+    .demo-title { font-size: 9.5px; color: #94a3b8; flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+    .demo-btns {
+      display: flex; align-items: center; gap: 5px;
+    }
+    .demo-btn {
+      display: flex; align-items: center; gap: 3px;
+      padding: 3px 8px; border-radius: 12px;
+      font-size: 9px; font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: transform .15s ease, filter .15s ease;
+      user-select: none;
+    }
+    .demo-btn:hover {
+      transform: scale(1.05);
+      filter: brightness(1.2);
+    }
+    .demo-btn.zip { background: linear-gradient(135deg,#6366f1,#818cf8); color:#fff; }
+    .demo-btn.pdf { background: linear-gradient(135deg,#ffd814,#f59e0b); color:#0f172a; }
+    .demo-btn svg { width: 8px; height: 8px; }
+
+    /* Instructions */
+    .section { padding: 12px 18px 4px; }
+    .section-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #64748b; margin-bottom: 8px;
+    }
+    .steps { display: flex; flex-direction: column; gap: 6px; }
+    .step { display: flex; align-items: flex-start; gap: 8px; }
+    .step-n {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3);
+      color: #818cf8; font-size: 9px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-t { font-size: 11px; color: #94a3b8; line-height: 1.45; }
+    .step-t strong { color: #e2e8f0; }
+
+    /* Footer */
+    .footer {
+      padding: 10px 18px 4px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 8px;
+    }
+    .footer-note { font-size: 9.5px; color: #475569; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>KDP Samples Exporter</h1>
+      <p>Amazon Book Preview to PDF & PNG</p>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="status-row">
+    <div class="status-left">
+      <div class="dot" id="sdot"></div>
+      <span id="slabel">Scanning active tab…</span>
+    </div>
+    <span class="status-badge" id="sbadge">—</span>
+  </div>
+
+  <!-- Main Active Export Box -->
+  <div class="action-box">
+    <div class="action-title">
+      <span>Export Options</span>
+      <span style="font-size:9.5px;font-weight:normal;color:#64748b;">Direct Download</span>
+    </div>
+
+    <!-- Quick Open Sample button (appears when sample is not open yet) -->
+    <button class="action-btn btn-open" id="btn-open-sample" title="Click to open book preview on Amazon">
+      📖 Open "Read Sample" on Book First
+    </button>
+
+    <!-- Range Selector -->
+    <div class="range-selector">
+      <span>Page Range:</span>
+      <div class="range-inputs">
+        <input type="number" id="pop-start" placeholder="1" min="1" step="1">
+        <span style="color:#64748b;">to</span>
+        <input type="number" id="pop-end" placeholder="All" min="1" step="1">
+      </div>
+    </div>
+
+    <!-- Download Buttons Grid -->
+    <div class="btn-grid">
+      <button class="action-btn btn-pdf" id="btn-export-pdf" title="Download merged PDF document">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        Download PDF
+      </button>
+
+      <button class="action-btn btn-zip" id="btn-export-zip" title="Download ZIP containing all PNG pages">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download PNG
+      </button>
+    </div>
+
+    <button class="action-btn btn-scroll" id="btn-load-all" title="Smoothly scroll to load all lazy-loaded pages">
+      ⏬ Auto-Load All Pages First
+    </button>
+
+    <button class="action-btn btn-covers" id="btn-export-covers" title="Download original high-resolution book cover(s)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+      Download Book Cover(s)
+    </button>
+
+    <button class="action-btn btn-toggle" id="btn-toggle-toolbar" title="Show or hide floating bar on the page">
+      👁️ Hide / Show Bar on Page
+    </button>
+
+    <!-- Progress indication -->
+    <div class="progress-box" id="progress-box">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-text" id="progress-text">Preparing…</div>
+    </div>
+  </div>
+
+  <!-- Interactive Demo Preview (Also clickable!) -->
+  <div class="preview-demo">
+    <div class="demo-toolbar">
+      <div class="demo-nav">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        Preview
+      </div>
+      <div class="demo-title" id="demo-title">Amazon Toolbar</div>
+      <div class="demo-btns">
+        <div class="demo-btn zip" id="demo-btn-zip" title="Click to Download PNG ZIP">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          PNG ZIP
+        </div>
+        <div class="demo-btn pdf" id="demo-btn-pdf" title="Click to Download PDF">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          PDF
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Instructions -->
+  <div class="section">
+    <div class="section-title">Quick Guide</div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-n">1</div>
+        <div class="step-t">Open any <strong>Amazon book page</strong></div>
+      </div>
+      <div class="step">
+        <div class="step-n">2</div>
+        <div class="step-t">Click <strong>"Read sample"</strong> on the book</div>
+      </div>
+      <div class="step">
+        <div class="step-n">3</div>
+        <div class="step-t">Click <strong>Auto-Load All Pages</strong> or scroll to load</div>
+      </div>
+      <div class="step">
+        <div class="step-n">4</div>
+        <div class="step-t">Click <strong>Download PDF</strong> or <strong>PNG ZIP</strong>!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span class="footer-note">v7.1.0 · KDP Exporter</span>
+    <span class="footer-note">Buttons Active ✓</span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
