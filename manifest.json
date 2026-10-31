@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KDP Samples Exporter",
-  "version": "7.2.0",
+  "version": "7.3.0",
   "description": "Export Amazon book preview pages: export buttons injected directly into the preview toolbar, exports as ZIP or PDF.",
   "icons": {
     "16": "icons/icon16.png",

@@ -12,6 +12,7 @@
   const btnZip       = document.getElementById('btn-export-zip');
   const btnScroll    = document.getElementById('btn-load-all');
   const btnCovers    = document.getElementById('btn-export-covers');
+  const btnSearchCovers = document.getElementById('btn-search-covers');
   const btnToggle    = document.getElementById('btn-toggle-toolbar');
   const btnOpenSample = document.getElementById('btn-open-sample');
   const demoBtnPdf   = document.getElementById('demo-btn-pdf');
@@ -73,7 +74,7 @@
       });
 
       if (resp && resp.active) {
-        handleStatusResponse(resp.pageCount, resp.title, resp.hasWidget);
+        handleStatusResponse(resp);
         return;
       }
 
@@ -81,6 +82,17 @@
       const results = await chrome.scripting.executeScript({
         target: { tabId: activeTabId, allFrames: true },
         func: () => {
+          const path = window.location.pathname || '';
+          const search = window.location.search || '';
+          const isSearch = path.startsWith('/s') || search.includes('k=') || search.includes('field-keywords=');
+          let searchCount = 0;
+          let searchKeyword = '';
+          if (isSearch) {
+            searchCount = document.querySelectorAll('div[data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""])').length;
+            const input = document.getElementById('twotabsearchtextbox') || document.querySelector('input[name="field-keywords"]');
+            searchKeyword = input?.value || '';
+          }
+
           // Check if this frame is a REAL reader preview!
           const isReader = window.location.hostname === 'read.amazon.com' ||
                            !!document.querySelector('#renderer-container, .a-m-us-scroller, #kindleReader_page_container, #litb-container');
@@ -89,7 +101,6 @@
           if (isReader && typeof window.kdpGetImages === 'function') {
             samplePages = window.kdpGetImages().length;
           } else if (isReader) {
-            // Count inside real reader only
             samplePages = [...document.querySelectorAll('img')].filter(img => {
               const w = img.naturalWidth || img.offsetWidth || img.width;
               const h = img.naturalHeight || img.offsetHeight || img.height;
@@ -102,13 +113,16 @@
 
           const hasWidget = !!document.getElementById('kdp-export-widget');
           const title = document.title || '';
-          return { isReader, samplePages, hasWidget, title };
+          return { isReader, isSearch, searchCount, searchKeyword, samplePages, hasWidget, title };
         }
       });
 
       let totalSamplePages = 0;
       let hasWidget = false;
       let pageTitle = '';
+      let isSearchFallback = false;
+      let searchCountFallback = 0;
+      let searchKeywordFallback = '';
 
       for (const r of results || []) {
         if (!r.result) continue;
@@ -116,24 +130,71 @@
         if (r.result.isReader) {
           totalSamplePages += r.result.samplePages;
         }
+        if (r.result.isSearch) {
+          isSearchFallback = true;
+          searchCountFallback = Math.max(searchCountFallback, r.result.searchCount || 0);
+          if (r.result.searchKeyword) searchKeywordFallback = r.result.searchKeyword;
+        }
         if (r.result.title && !pageTitle) pageTitle = r.result.title;
       }
 
-      handleStatusResponse(totalSamplePages, pageTitle, hasWidget);
+      handleStatusResponse({
+        pageCount: totalSamplePages,
+        title: pageTitle,
+        hasWidget,
+        isSearch: isSearchFallback,
+        searchCount: searchCountFallback,
+        searchKeyword: searchKeywordFallback
+      });
 
     } catch (err) {
       console.warn('[KDP Popup] Scan error:', err);
-      setStatus('', 'Open "Read sample" on Amazon', 'Waiting');
+      setStatus('', 'Open an Amazon book or search page', 'Waiting');
     }
   }
 
-  function handleStatusResponse(count, title, hasWidget) {
+  function handleStatusResponse(info) {
+    const isSearch = !!info.isSearch;
+    const searchCount = info.searchCount || 0;
+    const searchKeyword = info.searchKeyword || '';
+    const count = info.pageCount !== undefined ? info.pageCount : (info.count || 0);
+    const title = info.title || '';
+
+    if (isSearch) {
+      const kw = searchKeyword || 'Keyword';
+      const c = searchCount || 0;
+      setStatus('ok', `Search: "${kw}" (${c} books)`, `${c} Books`);
+      if (demoTitle) demoTitle.textContent = `Search: ${kw}`.slice(0, 18);
+
+      if (btnSearchCovers) {
+        btnSearchCovers.style.display = 'flex';
+        btnSearchCovers.textContent = `📥 Download All ${c} Search Covers (ZIP)`;
+        btnSearchCovers.disabled = false;
+      }
+      if (btnOpenSample) btnOpenSample.style.display = 'none';
+      if (btnCovers) {
+        btnCovers.textContent = `🖼️ Download All Search Covers (${c} Books)`;
+        btnCovers.disabled = false;
+      }
+      if (btnScroll) {
+        btnScroll.textContent = `⏬ Auto-Scroll Search Page (${c} Books)`;
+        btnScroll.disabled = false;
+      }
+      btnPdf.disabled = true;
+      btnZip.disabled = true;
+      return;
+    }
+
+    // Normal Book Page:
+    if (btnSearchCovers) btnSearchCovers.style.display = 'none';
+    if (btnCovers) btnCovers.textContent = '🖼️ Download Book Cover(s)';
+    if (btnScroll) btnScroll.textContent = '⏬ Auto-Load All Pages First';
+
     detectedPageCount = count;
     if (title && demoTitle) {
       demoTitle.textContent = title.length > 18 ? title.slice(0, 18) + '…' : title;
     }
 
-    // Always allow downloading covers on Amazon
     if (btnCovers) btnCovers.disabled = false;
     btnScroll.disabled = false;
 
@@ -146,9 +207,8 @@
         inputEnd.placeholder = String(count);
       }
     } else {
-      // Sample is NOT open yet!
       setStatus('check', 'Open "Read sample" on book first', 'Sample closed');
-      btnPdf.disabled = true; // DO NOT allow downloading until sample is actually open!
+      btnPdf.disabled = true;
       btnZip.disabled = true;
       if (btnOpenSample) btnOpenSample.style.display = 'flex';
     }
@@ -179,12 +239,17 @@
     } else if (actionType === 'covers') {
       progressText.textContent = 'Downloading covers…';
       if (btnCovers) btnCovers.disabled = true;
+    } else if (actionType === 'search-covers') {
+      progressText.textContent = 'Auto-scrolling & packaging search covers…';
+      if (btnSearchCovers) btnSearchCovers.disabled = true;
+      if (btnCovers) btnCovers.disabled = true;
     }
 
     let messageType = 'KDP_TRIGGER_PDF';
     if (actionType === 'zip') messageType = 'KDP_TRIGGER_ZIP';
     if (actionType === 'scroll') messageType = 'KDP_TRIGGER_SCROLL';
     if (actionType === 'covers') messageType = 'KDP_TRIGGER_COVERS';
+    if (actionType === 'search-covers') messageType = 'KDP_TRIGGER_SEARCH_COVERS';
 
     // 1. Try sending direct message to all frames
     chrome.tabs.sendMessage(activeTabId, {
@@ -203,6 +268,8 @@
               window.kdpExportZIP(startRange, endRange);
             } else if (type === 'covers' && typeof window.kdpExportCovers === 'function') {
               window.kdpExportCovers();
+            } else if (type === 'search-covers' && typeof window.kdpExportSearchCovers === 'function') {
+              window.kdpExportSearchCovers();
             } else if (type === 'scroll' && typeof window.kdpAutoScroll === 'function') {
               window.kdpAutoScroll();
             }
@@ -260,6 +327,7 @@
   btnZip.addEventListener('click', () => triggerAction('zip'));
   btnScroll.addEventListener('click', () => triggerAction('scroll'));
   if (btnCovers) btnCovers.addEventListener('click', () => triggerAction('covers'));
+  if (btnSearchCovers) btnSearchCovers.addEventListener('click', () => triggerAction('search-covers'));
 
   if (btnToggle) {
     btnToggle.addEventListener('click', () => {

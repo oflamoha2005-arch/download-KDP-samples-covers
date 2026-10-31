@@ -8,6 +8,7 @@ Exports inside book sample pages directly into merged **PDF** or **PNG (ZIP)** a
 
 ## ✨ Features
 
+- 🔍 **Bulk Search Results Covers Downloader:** Search for any KDP niche or keyword on Amazon (e.g., *"crime stories"*), and with one click, the tool smoothly auto-scrolls down the search page to load all lazy-loaded book covers, extracts them in original **Full HD**, and packages them into a single clean ZIP (`Covers-Search-[keyword].zip`). Ideal for KDP research and cover design analysis!
 - 📖 **Inside Book Sample PDF Export:** Merges all rendered Kindle preview pages into a single high-quality PDF document.
 - 📦 **Sample Pages as PNG ZIP:** Downloads each preview page as a standalone image packaged in a clean `.zip` archive.
 - 🖼️ **Full HD Book Covers:** Extracts high-resolution front covers and image gallery shots from Amazon book product pages.
@@ -64,3 +65,4 @@ Exports inside book sample pages directly into merged **PDF** or **PNG (ZIP)** a
 ## 📄 License
 
 MIT License — feel free to use and modify for your personal and commercial projects.
+

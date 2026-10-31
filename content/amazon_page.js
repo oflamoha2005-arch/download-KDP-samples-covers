@@ -954,8 +954,294 @@
     }
   }
 
-  // ── Book Covers Export (Front/Back/Gallery) ───────────────
+  // ── Amazon Search Results Helpers & Bulk Covers Exporter ──
+  function isSearchPage() {
+    if (window.self !== window.top) return false;
+    const path = window.location.pathname || '';
+    const search = window.location.search || '';
+    const isUrlSearch = path.startsWith('/s') || path.includes('/search') || search.includes('k=') || search.includes('field-keywords=');
+    const hasSearchGrid = !!document.querySelector('div[data-component-type="s-search-result"], .s-result-item[data-asin]');
+    return isUrlSearch || hasSearchGrid;
+  }
+
+  function getSearchKeyword() {
+    const input = document.getElementById('twotabsearchtextbox') || document.querySelector('input[name="field-keywords"]');
+    if (input && input.value && input.value.trim()) return input.value.trim();
+    const urlParams = new URLSearchParams(window.location.search);
+    const k = urlParams.get('k') || urlParams.get('field-keywords') || '';
+    if (k) return k.replace(/\+/g, ' ').trim();
+    const match = document.title.match(/Amazon\.[a-z.]+\s*:\s*(.*?)(:|\.|$)/i);
+    if (match && match[1]) return match[1].trim();
+    return 'Search';
+  }
+
+  function getSearchResultsCovers() {
+    if (!isSearchPage()) return [];
+
+    const covers = [];
+    const seen = new Set();
+
+    const cards = document.querySelectorAll(
+      'div[data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""])'
+    );
+
+    cards.forEach((card, idx) => {
+      const img = card.querySelector('img.s-image') ||
+                  card.querySelector('.s-product-image-container img') ||
+                  card.querySelector('img[src*="/images/I/"]');
+
+      if (!img) return;
+
+      let src = img.src || img.getAttribute('data-src') || '';
+      if (!src || src.startsWith('data:')) {
+        const srcset = img.getAttribute('srcset');
+        if (srcset) {
+          const parts = srcset.split(',').map(s => s.trim().split(' ')[0]);
+          src = parts[parts.length - 1] || '';
+        }
+      }
+
+      if (!src || src.startsWith('data:')) return;
+
+      const lower = src.toLowerCase();
+      if (
+        lower.includes('sprite') ||
+        lower.includes('icon') ||
+        lower.includes('pixel') ||
+        lower.includes('prime') ||
+        lower.includes('rating') ||
+        lower.includes('stars') ||
+        lower.includes('badge') ||
+        lower.includes('play-button')
+      ) return;
+
+      // Transform thumbnail to original high resolution
+      const highRes = src.replace(/\._[A-Z0-9_,]+_\./i, '.');
+
+      if (seen.has(highRes)) return;
+      seen.add(highRes);
+
+      let title = '';
+      const titleEl = card.querySelector('h2 a span, h2 span, .a-size-medium, .a-size-base-plus, h2');
+      if (titleEl && titleEl.textContent.trim()) {
+        title = titleEl.textContent.trim();
+      } else if (img.alt && img.alt.trim()) {
+        title = img.alt.trim();
+      } else {
+        title = `Book-${idx + 1}`;
+      }
+
+      covers.push({
+        src: highRes,
+        el: img,
+        title: title,
+        asin: card.getAttribute('data-asin') || ''
+      });
+    });
+
+    return covers;
+  }
+
+  let _isExportingSearch = false;
+  async function doExportSearchCovers() {
+    if (_isExportingSearch) return;
+    _isExportingSearch = true;
+
+    const btn = document.getElementById('kdp-search-btn-download');
+    const origText = btn ? btn.textContent : '📥 Download All Covers';
+    if (btn) btn.textContent = '⏬ Scrolling…';
+
+    showToast('⏬ Auto-scrolling search page to load all book covers…');
+
+    // 1. Smoothly scroll down the page to trigger lazy loading of images
+    try {
+      const scrollStep = Math.max(window.innerHeight * 0.85, 600);
+      let cur = window.scrollY || 0;
+      const getH = () => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      let lastScroll = -1;
+
+      while (cur + window.innerHeight < getH() && cur !== lastScroll) {
+        lastScroll = cur;
+        cur = Math.min(cur + scrollStep, getH());
+        window.scrollTo({ top: cur, behavior: 'smooth' });
+        const count = getSearchResultsCovers().length;
+        if (btn) btn.textContent = `⏬ ${count} Books…`;
+        await delay(220);
+      }
+
+      // Small pause at bottom to let images render
+      await delay(500);
+
+      // Scroll smoothly back to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      await delay(300);
+    } catch (e) {
+      console.warn('[KDP] Auto scroll error:', e);
+    }
+
+    // 2. Collect all loaded book covers
+    const covers = getSearchResultsCovers();
+
+    if (!covers.length) {
+      _isExportingSearch = false;
+      if (btn) btn.textContent = origText;
+      showToast('⚠️ No book covers found on this search page.');
+      return;
+    }
+
+    if (btn) btn.textContent = `⏳ 0/${covers.length}`;
+    showToast(`📦 Packaging ${covers.length} high-resolution book covers into ZIP…`);
+
+    try {
+      const zip = new SimpleZip();
+      let done = 0;
+
+      for (let i = 0; i < covers.length; i++) {
+        const cover = covers[i];
+        if (btn) btn.textContent = `⏳ ${i + 1}/${covers.length}`;
+        showToast(`🖼️ Downloading cover ${i + 1} of ${covers.length}…`);
+
+        try {
+          const imgData = await getExportableImage(cover);
+          const ext = (imgData.mimeType && imgData.mimeType.includes('png')) ? 'png' : 'jpg';
+
+          let cleanTitle = cover.title
+            .replace(/[\x00-\x1f\x7f-\x9f]/g, '')
+            .replace(/[<>:"/\\|?*]/g, '_')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 45);
+
+          if (!cleanTitle) cleanTitle = `Book-${cover.asin || (i + 1)}`;
+          const pad = String(i + 1).padStart(2, '0');
+          const fileName = `${pad} - ${cleanTitle}.${ext}`;
+
+          zip.addFile(fileName, imgData.buffer);
+          done++;
+        } catch (err) {
+          console.warn('[KDP] Skip search cover', i + 1, err);
+        }
+
+        await delay(25);
+      }
+
+      let kw = getSearchKeyword()
+        .replace(/[\x00-\x1f\x7f-\x9f]/g, '')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .replace(/\s+/g, '_')
+        .trim()
+        .slice(0, 30);
+      if (!kw) kw = 'Search_Results';
+
+      const zipFilename = `Covers-Search-${kw}.zip`;
+      if (btn) btn.textContent = 'Saving…';
+
+      await downloadBlob(zip.generateBlob(), zipFilename);
+
+      if (btn) {
+        btn.textContent = '✅ Saved';
+        setTimeout(() => { if (btn) btn.textContent = origText; }, 4000);
+      }
+
+      showToast(`✅ Saved ${done} book covers into ${zipFilename}! Check Downloads folder.`, 6000);
+    } catch (err) {
+      console.error('[KDP] Search covers export failed:', err);
+      if (btn) btn.textContent = origText;
+      showToast('❌ Failed to download search covers: ' + err.message);
+    } finally {
+      _isExportingSearch = false;
+    }
+  }
+
+  // ── Floating Toolbar for Amazon Search Results ────────────
+  const SEARCH_WIDGET_ID = 'kdp-search-widget';
+  const SEARCH_PILL_ID = 'kdp-search-pill';
+
+  function injectSearchWidget() {
+    if (document.getElementById(SEARCH_WIDGET_ID) || document.getElementById(SEARCH_PILL_ID)) return;
+    if (!isSearchPage()) return;
+
+    const covers = getSearchResultsCovers();
+    const count = covers.length || '…';
+    const kw = getSearchKeyword();
+
+    // 1. Minimized Pill
+    const pill = document.createElement('div');
+    pill.id = SEARCH_PILL_ID;
+    pill.style.cssText = [
+      'position:fixed', 'top:14px', 'right:20px', 'z-index:2147483647',
+      'background:#0f766e', 'color:#f8fafc', 'padding:6px 14px',
+      'border-radius:20px', 'display:none', 'align-items:center', 'gap:6px',
+      'cursor:pointer', 'box-shadow:0 6px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.15)',
+      'font:700 12px/-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+      'user-select:none', 'transition:transform .15s ease'
+    ].join(';');
+    pill.innerHTML = `<span>📥</span><span>Download Covers (${count})</span>`;
+    document.body.appendChild(pill);
+
+    // 2. Main Floating Search Toolbar
+    const widget = document.createElement('div');
+    widget.id = SEARCH_WIDGET_ID;
+    widget.style.cssText = [
+      'position:fixed', 'top:14px', 'left:50%', 'transform:translateX(-50%)',
+      'z-index:2147483647', 'background:#1e293b',
+      'padding:6px 12px', 'border-radius:28px', 'display:flex', 'align-items:center', 'gap:8px',
+      'box-shadow:0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.12)',
+      'color:#f8fafc', 'font:12px/-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+      'user-select:none', 'backdrop-filter:blur(8px)'
+    ].join(';');
+
+    widget.innerHTML = `
+      <div class="kdp-drag-handle" id="kdp-search-drag-handle" style="cursor:grab;color:#64748b;font-size:15px;padding:2px 4px;user-select:none;display:flex;align-items:center;line-height:1;" title="Drag toolbar anywhere">⠿</div>
+      <div style="font-weight:700;color:#94a3b8;font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Keyword: ${kw}">🔍 "${kw}"</div>
+      <div id="kdp-search-count" style="font-weight:700;color:#38bdf8;font-size:11px;background:rgba(56,189,248,0.15);padding:2px 8px;border-radius:10px;">${count} Books</div>
+      <button id="kdp-search-btn-download" style="appearance:none;border:none;background:linear-gradient(135deg, #10b981, #059669);color:#ffffff;padding:5px 14px;border-radius:18px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;height:28px;box-shadow:0 2px 8px rgba(16,185,129,0.35);" title="Auto-scroll down and download all book covers on this page into a ZIP">📥 Download All Covers (ZIP)</button>
+      <button id="kdp-search-btn-close" style="appearance:none;border:none;background:transparent;color:#94a3b8;font-size:14px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:1;" title="Hide bar (click 📥 icon in corner to reopen)">✕</button>
+    `;
+
+    document.body.appendChild(widget);
+
+    // Drag handle
+    const dragHandle = widget.querySelector('#kdp-search-drag-handle');
+    makeDraggable(widget, dragHandle);
+
+    // Close & Reopen listeners
+    const btnClose = widget.querySelector('#kdp-search-btn-close');
+    btnClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      widget.style.display = 'none';
+      pill.style.display = 'flex';
+      sessionStorage.setItem('kdp_search_toolbar_hidden', '1');
+    });
+
+    pill.addEventListener('click', () => {
+      pill.style.display = 'none';
+      widget.style.display = 'flex';
+      sessionStorage.removeItem('kdp_search_toolbar_hidden');
+    });
+
+    if (sessionStorage.getItem('kdp_search_toolbar_hidden') === '1') {
+      widget.style.display = 'none';
+      pill.style.display = 'flex';
+    }
+
+    widget.querySelector('#kdp-search-btn-download').addEventListener('click', doExportSearchCovers);
+
+    // Live count updater
+    setInterval(() => {
+      const cEl = document.getElementById('kdp-search-count');
+      if (cEl) {
+        const n = getSearchResultsCovers().length;
+        if (n > 0) cEl.textContent = `${n} Books`;
+      }
+    }, 1500);
+  }
+
+  // ── Book Covers Export (Front/Back/Gallery or Search Page) ─
   async function doExportCovers(format = 'zip') {
+    if (isSearchPage()) {
+      return doExportSearchCovers();
+    }
     const btnCovers = document.getElementById('kdp-btn-covers');
     const origText = btnCovers ? btnCovers.textContent : '🖼️ Covers';
 
@@ -1355,13 +1641,15 @@
   }
 
   // ── Expose Global APIs (Accessible via executeScript & popup) ──
-  window.kdpExportPDF    = doExportPDF;
-  window.kdpExportZIP    = doExportZIP;
-  window.kdpExportCovers = doExportCovers;
-  window.kdpAutoScroll   = doAutoScroll;
-  window.kdpGetImages    = getPageImages;
-  window.kdpGetCovers    = getBookCovers;
-  window.kdpOpenSample   = openAmazonSample;
+  window.kdpExportPDF          = doExportPDF;
+  window.kdpExportZIP          = doExportZIP;
+  window.kdpExportCovers       = doExportCovers;
+  window.kdpExportSearchCovers = doExportSearchCovers;
+  window.kdpGetSearchCovers    = getSearchResultsCovers;
+  window.kdpAutoScroll         = doAutoScroll;
+  window.kdpGetImages          = getPageImages;
+  window.kdpGetCovers          = getBookCovers;
+  window.kdpOpenSample         = openAmazonSample;
 
   // ── Messaging Listeners ───────────────────────────────────
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1372,15 +1660,26 @@
     }
 
     if (message.type === 'KDP_GET_STATUS') {
+      const isSearch = isSearchPage();
+      const searchCovers = isSearch ? getSearchResultsCovers() : [];
       const pages = getPageImages();
       const covers = getBookCovers();
       sendResponse({
         active: true,
-        hasWidget: !!document.getElementById(WIDGET_ID),
+        hasWidget: !!(document.getElementById(WIDGET_ID) || document.getElementById(SEARCH_WIDGET_ID)),
+        isSearch: isSearch,
+        searchCount: searchCovers.length,
+        searchKeyword: isSearch ? getSearchKeyword() : '',
         pageCount: pages.length,
         coverCount: covers.length,
         title: document.title || ''
       });
+      return false;
+    }
+
+    if (message.type === 'KDP_TRIGGER_SEARCH_COVERS') {
+      doExportSearchCovers();
+      sendResponse({ started: true });
       return false;
     }
 
@@ -1473,6 +1772,9 @@
     if (e.data.type === 'KDP_DOWNLOAD_COVERS') {
       doExportCovers(e.data.format);
     }
+    if (e.data.type === 'KDP_DOWNLOAD_SEARCH_COVERS') {
+      doExportSearchCovers();
+    }
     if (e.data.type === 'KDP_LOAD_ALL') {
       doAutoScroll();
     }
@@ -1480,12 +1782,22 @@
 
   // ── Polling & Boot ────────────────────────────────────────
   setInterval(() => {
+    // 1. Search Results Page Context
+    if (isSearchPage()) {
+      const sw = document.getElementById(SEARCH_WIDGET_ID);
+      const sp = document.getElementById(SEARCH_PILL_ID);
+      if (!sw && !sp) {
+        injectSearchWidget();
+      }
+      return;
+    }
+
+    // 2. Book Preview Context
     const isPreview = isPreviewContext();
     const widget = document.getElementById(WIDGET_ID);
     const pill = document.getElementById('kdp-minimized-pill');
 
     if (!isPreview) {
-      // If we are NOT in preview (e.g. search page or home), remove widget immediately
       if (widget) widget.remove();
       if (pill) pill.remove();
       return;
@@ -1499,10 +1811,12 @@
   // Initial attempt
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      if (isPreviewContext()) inject();
+      if (isSearchPage()) injectSearchWidget();
+      else if (isPreviewContext()) inject();
     });
   } else {
-    if (isPreviewContext()) inject();
+    if (isSearchPage()) injectSearchWidget();
+    else if (isPreviewContext()) inject();
   }
 
 })();

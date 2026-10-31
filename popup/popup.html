@@ -197,6 +197,28 @@
     .btn-open:hover {
       filter: brightness(1.1);
     }
+    .btn-search {
+      width: 100%;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 9px;
+      margin-bottom: 10px;
+      box-shadow: 0 4px 14px rgba(16,185,129,0.35);
+      border: 1px solid rgba(255,255,255,0.18);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+    .btn-search:hover:not(:disabled) {
+      filter: brightness(1.1);
+      transform: translateY(-2px);
+    }
     .btn-covers {
       width: 100%;
       background: linear-gradient(135deg, #0d9488, #14b8a6);
@@ -360,6 +382,11 @@
       📖 Open "Read Sample" on Book First
     </button>
 
+    <!-- Search Results Mode Button: appears on keyword search pages -->
+    <button class="action-btn btn-search" id="btn-search-covers" title="Auto-scroll down and download all book covers from this search page into a ZIP">
+      📥 Download All Search Covers (ZIP)
+    </button>
+
     <!-- Range Selector -->
     <div class="range-selector">
       <span>Page Range:</span>
@@ -462,7 +489,7 @@
 
   <!-- Footer -->
   <div class="footer">
-    <span class="footer-note">v7.1.0 · KDP Exporter</span>
+    <span class="footer-note">v7.3.0 · KDP Exporter</span>
     <span class="footer-note">Buttons Active ✓</span>
   </div>
 
