@@ -477,23 +477,33 @@
     return getSamplePages();
   }
 
-  // ── Book Covers Collection (High-Res Listing Covers) ──────
+  // ── Book Covers Collection (High-Res Listing Covers ONLY) ──
   function getBookCovers() {
     const covers = [];
     const seen = new Set();
 
+    // 1. First: Find the primary Book Front Cover
     const mainCoverSelectors = [
       '#landingImage',
       '#imgBlkFront',
       '#ebooksImgBlkFront',
+      '#main-image-container img',
+      '#ebooks-fullscreen-img-blk',
       '#main-image',
-      '.frontImage',
-      '#ebooks-fullscreen-img-blk'
+      '.frontImage'
     ];
+
+    let frontCoverFound = false;
 
     for (const sel of mainCoverSelectors) {
       const img = document.querySelector(sel);
       if (img) {
+        // Exclude if inside ads, recommendations, or customer carousels
+        if (img.closest('[id*="sponsored" i], [class*="sponsored" i], [id*="sims" i], [id*="carousel" i]:not(#imageBlock *)')) {
+          continue;
+        }
+
+        // Try extracting highest resolution from data-a-dynamic-image
         const dyn = img.getAttribute('data-a-dynamic-image');
         if (dyn) {
           try {
@@ -503,31 +513,61 @@
               if (!seen.has(url)) {
                 seen.add(url);
                 covers.push({ src: url, el: img, label: 'Front Cover (Full HD)' });
+                frontCoverFound = true;
                 break;
               }
             }
           } catch (_) {}
         }
-        if (!covers.length && img.src && !seen.has(img.src)) {
-          seen.add(img.src);
-          covers.push({ src: img.src, el: img, label: 'Front Cover' });
+
+        if (!frontCoverFound && img.src && !seen.has(img.src)) {
+          // Clean Amazon thumbnail tags (e.g. ._SX300_.) to fetch original publisher asset
+          const fullRes = img.src.replace(/\._[A-Z0-9_,]+_\./i, '.');
+          seen.add(fullRes);
+          covers.push({ src: fullRes, el: img, label: 'Front Cover' });
+          frontCoverFound = true;
         }
-        break;
+
+        if (frontCoverFound) break;
       }
     }
 
-    // Gallery images (back cover, inside look)
-    document.querySelectorAll('#altImages img, .imageThumbnail img, #ivImagesTab img').forEach((thumb) => {
-      let src = thumb.src || '';
-      if (!src || src.includes('icon') || src.includes('play-button') || src.includes('sprite')) return;
-      const highRes = src.replace(/\._[A-Z0-9_,]+_\./i, '.');
-      if (!seen.has(highRes) && !seen.has(src)) {
-        seen.add(highRes);
-        covers.push({ src: highRes, el: thumb, label: `Cover / Gallery ${covers.length + 1}` });
-      }
-    });
+    // 2. Official Gallery thumbnails (Back cover, inside look) STRICTLY inside #imageBlock or #altImages
+    // We NEVER query .imageThumbnail globally across document to prevent scraping faucets, lamps, ads, recommendations!
+    const galleryContainer = document.querySelector('#imageBlock #altImages, #altImages, #booksImageBlock #altImages');
+    if (galleryContainer) {
+      const thumbs = galleryContainer.querySelectorAll('li:not(.video) img, .a-button-thumbnail img');
+      thumbs.forEach((thumb) => {
+        // Security check: must NOT be an ad or recommendation
+        if (thumb.closest('[id*="sponsored" i], [class*="sponsored" i], [id*="sims" i], [id*="rhf" i]')) {
+          return;
+        }
 
-    return covers;
+        let src = thumb.src || thumb.getAttribute('data-src') || '';
+        if (!src || src.startsWith('data:')) return;
+
+        const lower = src.toLowerCase();
+        if (lower.includes('icon') || lower.includes('play-button') || lower.includes('sprite') || lower.includes('video')) {
+          return;
+        }
+
+        // Transform thumbnail URL into full original resolution
+        // e.g. https://m.media-amazon.com/images/I/71xyz._AC_US40_.jpg -> https://m.media-amazon.com/images/I/71xyz.jpg
+        const highRes = src.replace(/\._[A-Z0-9_,]+_\./i, '.');
+
+        if (!seen.has(highRes) && !seen.has(src)) {
+          seen.add(highRes);
+          seen.add(src);
+          const isSecond = covers.length === 1;
+          const label = isSecond ? 'Back Cover' : `Book Image ${covers.length + 1}`;
+          covers.push({ src: highRes, el: thumb, label });
+        }
+      });
+    }
+
+    // A book only ever has 1 to 3 real covers (Front, Back, and maybe spine/interior).
+    // Limit to maximum 3 covers to guarantee 100% purity with zero accidental ad inclusions.
+    return covers.slice(0, 3);
   }
 
   // ── Bulletproof Image Extraction (Canvas + Page Fetch + Background) ──
@@ -949,7 +989,7 @@
         try {
           const imgData = await getExportableImage(covers[i]);
           const ext = (imgData.mimeType && imgData.mimeType.includes('png')) ? 'png' : 'jpg';
-          const name = i === 0 ? `01-Front-Cover-FullHD.${ext}` : `0${i + 1}-Cover-Gallery.${ext}`;
+          const name = i === 0 ? `01-Front-Cover-FullHD.${ext}` : (i === 1 ? `02-Back-Cover.${ext}` : `03-Cover-Alternate.${ext}`);
           zip.addFile(name, imgData.buffer);
           done++;
         } catch (e) {
